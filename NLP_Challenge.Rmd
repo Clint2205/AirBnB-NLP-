@@ -1,0 +1,316 @@
+---
+title: "CST4070 NLP Challenge"
+output: html_notebook
+---
+
+## Introduction
+
+
+This report presents an analysis of Airbnb reviews, focusing on comparing word usage between the earliest and most recent years in the dataset. The primary objective is to identify trends in how guests describe their experiences over time.
+
+## Data Loading 
+```{r}
+
+airbnb_data <- read.csv('reviews.csv')
+
+
+sum(is.na(airbnb_data$id))
+
+airbnb_data
+
+
+
+
+```
+## Handling Missing Values and Data Cleaning
+- Checking for missing values in the dataset.
+- Dropping rows with missing `comments`.
+- Displaying the data structure after cleaning.
+
+
+```{r}
+# Seeing missing values  
+colSums(is.na(airbnb_data)) 
+
+# drop rows with missing values
+reviews_data <- airbnb_data |> 
+   drop_na(comments)
+
+colSums(is.na(reviews_data)) 
+
+str(reviews_data)
+
+
+```
+
+## Checking for Duplicates
+- Count of the number of duplicate entries in the dataset.
+
+```{r}
+# count of duplicated data
+sum(duplicated(reviews_data))
+names(reviews_data)
+
+```
+
+```{r}
+dim(reviews_data)
+head(reviews_data)
+
+
+```
+
+## Date Conversion and Year Extraction
+- Converting  the date column to date format .
+- sorting unique years to identify the earliest and latest years.
+
+
+```{r}
+library(lubridate)
+
+#converting the date column to date format from char
+reviews_data$date <- ymd(reviews_data$date)
+#reviews_data$id <- as.integer(reviews_data$id)
+class(reviews_data$date)
+
+unique_years <- reviews_data |> 
+  mutate(year = format(date, "%Y")) |> 
+  filter(!is.na(as.numeric(year))) |>  # Remove non-numeric year values
+  pull(year) |> 
+  unique() |> 
+  sort()
+
+print(unique_years)
+head(reviews_data)
+
+```
+
+
+
+```{r}
+
+# histogram to understand the distribution of the reviews
+library(ggplot2)
+
+ggplot(reviews_data, aes(x = date)) +
+  geom_histogram(bins = 22, fill = "steelblue", color = "black") +
+  labs(title = "Distribution of Reviews Over Time",
+       x = "Date",
+       y = "Number of Reviews") 
+
+```
+# Distribution of reveiws overtime overveiw
+
+The histogram shows that the number of reviews in the earliest years is lower compared to recent years. This trend could be attributed to various factors, including the growth of Airbnb listings over time, increased user adoption, and changes in review culture, all contributing to a rise in review numbers. 
+
+
+## Splitting the Data into Early and Recent Groups
+- Splitting the dataset into two groups based on the first and last available years (2009 and 2024).
+
+```{r}
+
+year_range <- reviews_data |> 
+  mutate(year = format(date, "%Y")) |> 
+  pull(year) |> 
+  unique() |> 
+  sort()
+# Initialising the first and last available years
+earliest_year <- min(year_range)
+latest_year <- max(year_range)
+
+# dataframes for early and recent reviews
+early_reviews <- reviews_data |> 
+  mutate(year = as.numeric(format(date, "%Y"))) |>  
+  filter(year == earliest_year)
+
+recent_reviews <- reviews_data |> 
+  mutate(year = as.numeric(format(date, "%Y"))) |>  
+  filter(year == latest_year)
+
+nrow(early_reviews)
+nrow(recent_reviews)
+
+
+```
+
+```{r}
+head(early_reviews)   
+head(recent_reviews)
+
+
+
+```
+## Text proccessing 
+- conversion of the comments column to lowercase
+- removal of punctuation marks
+- splitting the text into individual words (tokens)
+- removing stop words that don't mean anything to the analysis
+- removing single characters and html syntax such as (br)
+
+```{r}
+library(dplyr)
+library(tidytext)
+library(stopwords)
+
+process_text <- function(temp_df) {
+  temp_df <- temp_df |> 
+    mutate(comments_lower = tolower(comments)) |>  
+    mutate(comments_lower = gsub("[[:punct:]]", " ", comments_lower)) |> 
+     mutate(comments_lower = gsub("\\b\\w{1}\\b", "", comments_lower)) |> 
+    mutate(comments_lower = gsub("\\bbr\\b", "", 
+comments_lower)) |> 
+    unnest_tokens(word, comments_lower) |>  
+    anti_join(get_stopwords(language = "en") |>
+                rename(word = word), by = "word")  
+  
+  return(temp_df)
+}
+
+early_reviews <- process_text(early_reviews)
+recent_reviews <- process_text(recent_reviews)
+
+head(early_reviews)
+head(recent_reviews)
+
+
+```
+```{r}
+names(early_reviews)
+names(recent_reviews)
+
+dim(early_reviews)
+dim(recent_reviews)
+
+
+```
+
+
+
+## lemmatisation
+
+-   applying lemmatisation to the word column in both the early and recent reviews datasets reducing words to their root form, helping to standardize variations of words and improve the accuracy of analysis.
+
+```{r}
+
+
+# Apply lemmatization to the 'word' column
+early_reviews <- early_reviews |> 
+  mutate(word = lemmatize_words(word))
+
+recent_reviews <- recent_reviews |> 
+  mutate(word = lemmatize_words(word))
+
+head(early_reviews$word)
+
+
+
+```
+
+
+
+```{r}
+
+head(recent_reviews$word)
+
+```
+
+
+
+```{r}
+
+# Count of word frequency for each group
+early_word_freq <- early_reviews |> 
+  count(word, sort = TRUE)
+
+recent_word_freq <- recent_reviews |> 
+  count(word, sort = TRUE)
+
+# View top words
+head(early_word_freq, 25)
+head(recent_word_freq,15)
+
+```
+```{r}
+# merging early and recent word counts
+early_bow <- early_reviews |> count(word, sort = TRUE)
+recent_bow <- recent_reviews |> count(word, sort = TRUE)
+# Merge early and recent word counts
+word_comparison <- full_join(early_bow, recent_bow, by = "word", suffix = c("_early", "_recent")) |> 
+  replace_na(list(n_early = 0, n_recent = 0)) |> 
+  mutate(diff = n_recent - n_early) |> 
+  arrange(desc(abs(diff)))  
+# View words with the biggest increase or decrease
+head(word_comparison, 10)
+
+```
+
+
+
+
+
+# Observations
+
+- The most frequently used words in recent reviews relate to positive experiences such as stay, great and clean
+
+- Earlier reviews had significantly fewer occurrences of these words, likely due to a smaller dataset size or different writing styles.
+
+- The increase in mentions of "location" suggests that guests have placed more emphasis on geographical convenience over time.
+
+- The presence of the word "London" among the most used words in recent reviews indicates a location specific pattern in the dataset.
+```{r}
+
+# Select top 10 words with the biggest absolute change
+top_words <- word_comparison |> 
+  slice_max(order_by = abs(diff), n = 10) |> 
+  pivot_longer(cols = c(n_early, n_recent), names_to = "time_period", values_to = "count")
+
+
+top_words
+```
+
+
+```{r}
+
+#  bar chart
+ggplot(top_words, aes(x = reorder(word, count), y = count, fill = time_period)) +
+  geom_col(position = "dodge") + 
+  coord_flip() +  
+  labs(title = "Top 10 Words: Early vs Recent Reviews",
+       x = "Word",
+       y = "Frequency",
+       fill = "Time Period") +
+  scale_fill_manual(values = c("n_early" = "red", "n_recent" = "blue"))  
+
+
+```
+
+```{r}
+
+library(wordcloud)
+
+# Setting up plotting area into two plots
+par(mfrow = c(1, 2))  
+
+# Generating word clouds
+wordcloud(words = early_bow$word, freq = early_bow$n, max.words = 20, colors = "red")
+title("Early Reviews (2009)")
+
+wordcloud(words = recent_bow$word, freq = recent_bow$n, max.words = 20, colors = "blue")
+title("Recent Reviews(2024)")
+
+
+```
+
+# Conclusion
+
+- This analysis highlights how Airbnb guest's language has evolved over time. 
+- The increasing frequency of words like stay, great and clean suggests a growing trend in positive guest feedback.
+- Reviews in 2024 are more frequent, reflecting Airbnb’s popularity and changes in user behavior..
+
+
+
+
+
+
+
+
